@@ -90,7 +90,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/dist/Tone.js"></script>
     <script>
 const GameState={MENU:'menu',PLAYING:'playing',PAUSED:'paused',VICTORY:'victory',DEAD:'dead',LEVEL_SELECT:'level_select'};
 let state=GameState.MENU,currentLevel=0,switchCount=0,orbCount=0,gravity=new THREE.Vector3(0,-15,0),velocity=new THREE.Vector3(),levelCompleted=false,audioInitialized=false;
@@ -125,7 +125,7 @@ const levels=[
 ];
 let levelProgress=JSON.parse(localStorage.getItem('gravityBallProgress')||'{}');
 let musicSynth,musicLoop;
-async function initAudio(){if(audioInitialized)return;await Tone.start();audioInitialized=true;musicSynth=new Tone.PolySynth(Tone.Synth,{oscillator:{type:'square'},envelope:{attack:0.01,decay:0.1,sustain:0.5,release:0.3}}).toDestination();musicSynth.volume.value=-15;startMusic();}
+async function initAudio(){if(audioInitialized)return;try{await Tone.start();audioInitialized=true;musicSynth=new Tone.PolySynth(Tone.Synth,{oscillator:{type:'square'},envelope:{attack:0.01,decay:0.1,sustain:0.5,release:0.3}}).toDestination();musicSynth.volume.value=-15;startMusic();}catch(e){console.warn('Audio initialization failed, continuing without sound:',e);audioInitialized=false;}}
 function startMusic(){const notes=['C3','E3','G3','A3','B3','D4','F4','G4'];if(musicLoop)clearInterval(musicLoop);musicLoop=setInterval(()=>{if(state!==GameState.PLAYING)return;musicSynth.triggerAttackRelease(notes[Math.floor(Math.random()*notes.length)],'8n');},400);}
 function playWhoosh(){if(!audioInitialized)return;const n=new Tone.NoiseSynth({noise:{type:'brown'},envelope:{attack:0.01,decay:0.2,sustain:0,release:0.1}}).toDestination();n.volume.value=-10;n.triggerAttackRelease('16n');}
 function playBoing(){if(!audioInitialized)return;const o=new Tone.Oscillator({type:'sine',frequency:300}).toDestination();o.volume.value=-8;o.frequency.rampTo(150,0.1);o.start();o.stop('+0.15');}
