@@ -34,6 +34,12 @@
         #pause-indicator { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 48px; color: #ffd700; text-shadow: 0 0 30px #ffd700; opacity: 0; pointer-events: none; z-index: 150; }
         #pause-indicator.visible { opacity: 1; }
         .controls-hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #0ff; font-size: 12px; opacity: 0.5; text-align: center; }
+        .mobile-hint { display: none; position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); color: #f0f; font-size: 14px; text-align: center; animation: pulse 2s infinite; background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 20px; border: 1px solid #f0f; }
+        @media (hover: none) and (pointer: coarse) { .mobile-hint { display: block; } .controls-hint { display: none; } }
+        @keyframes pulse { 0%,100% { opacity: 0.7; } 50% { opacity: 1; } }
+        #gravity-arrow { width: 40px; height: 40px; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); }
+        #gravity-arrow svg { width: 100%; height: 100%; fill: #ffaa00; filter: drop-shadow(0 0 5px #fff) drop-shadow(0 0 10px #ffaa00); transition: transform 0.2s; }
+        #gravity-arrow.cooldown svg { opacity: 0.3; filter: grayscale(1); }
     </style>
 </head>
 <body>
@@ -43,6 +49,7 @@
         <div class="hud-panel"><div class="hud-label">Switches</div><div class="hud-value" id="switch-display">0</div></div>
         <div class="hud-panel"><div class="hud-label">Orbs</div><div class="hud-value" id="orb-display">0</div></div>
     </div>
+    <div id="gravity-arrow"><svg viewBox="0 0 24 24"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg></div>
     <div id="main-menu" class="screen active">
         <div class="screen-title">GRAVITY BALL</div>
         <div class="screen-subtitle">Master the Art of Falling</div>
@@ -76,6 +83,7 @@
     </div>
     <div id="pause-indicator">⏸ PAUSED</div>
     <div class="controls-hint">WASD / Arrows to switch gravity • R to restart • ESC to pause</div>
+    <div class="mobile-hint">Swipe to change gravity direction</div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
@@ -86,7 +94,9 @@
     <script>
 const GameState={MENU:'menu',PLAYING:'playing',PAUSED:'paused',VICTORY:'victory',DEAD:'dead',LEVEL_SELECT:'level_select'};
 let state=GameState.MENU,currentLevel=0,switchCount=0,orbCount=0,gravity=new THREE.Vector3(0,-15,0),velocity=new THREE.Vector3(),levelCompleted=false,audioInitialized=false;
-let ball,platforms=[],hazards=[],orbs=[],goal,ballTrail=[];
+let ball,platforms=[],hazards=[],orbs=[],goal,ballTrail=[],particles=[];
+let gravityCooldown=false,gravityCooldownTime=200;
+let lastGravityDir={x:0,y:-1};
 const container=document.getElementById('game-container'),scene=new THREE.Scene();
 const aspect=window.innerWidth/window.innerHeight,frustumSize=30;
 const camera=new THREE.OrthographicCamera(-frustumSize*aspect/2,frustumSize*aspect/2,frustumSize/2,-frustumSize/2,0.1,1000);
@@ -127,18 +137,45 @@ function createBall(){ball=new THREE.Mesh(new THREE.SphereGeometry(0.6,32,32),ne
 function createPlatform(x,y,w,h){const p=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.8}));p.position.set(x,y,0);const e=new THREE.EdgesGeometry(p.geometry);p.add(new THREE.LineSegments(e,new THREE.LineBasicMaterial({color:0x00ffff})));scene.add(p);platforms.push({mesh:p,x,y,w,h});}
 function createHazard(x,y,w,h){const hz=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:0xff3333,transparent:true,opacity:0.9}));hz.position.set(x,y,0);const glow=new THREE.Mesh(new THREE.PlaneGeometry(w+0.5,h+0.5),new THREE.MeshBasicMaterial({color:0xff0000,transparent:true,opacity:0.3}));hz.add(glow);scene.add(hz);hazards.push({mesh:hz,x,y,w,h,glow});}
 function createOrbObj(x,y){const o=new THREE.Mesh(new THREE.SphereGeometry(0.4,16,16),new THREE.MeshBasicMaterial({color:0x00ffff}));o.position.set(x,y,0);const g=new THREE.Mesh(new THREE.SphereGeometry(0.6,16,16),new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.3}));o.add(g);scene.add(o);orbs.push({mesh:o,x,y,collected:false});}
+function createOrbParticles(x,y){for(let i=0;i<12;i++){const p=new THREE.Mesh(new THREE.CircleGeometry(0.15,8),new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.9}));const angle=(Math.PI*2/12)*i+Math.random()*0.5;const speed=2+Math.random()*2;p.position.set(x,y,0);scene.add(p);particles.push({mesh:p,life:1,decay:0.03,velX:Math.cos(angle)*speed,velY:Math.sin(angle)*speed,type:'orb'});}}
+function createWallParticles(x,y){for(let i=0;i<6;i++){const p=new THREE.Mesh(new THREE.CircleGeometry(0.1,6),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:0.8}));const angle=Math.random()*Math.PI*2;const speed=1+Math.random()*1.5;p.position.set(x,y,0);scene.add(p);particles.push({mesh:p,life:1,decay:0.05,velX:Math.cos(angle)*speed,velY:Math.sin(angle)*speed,type:'wall'});}}
+function updateBallTrail(){const speed=velocity.length();if(speed>8){const t=new THREE.Mesh(new THREE.SphereGeometry(0.4,8,8),new THREE.MeshBasicMaterial({color:0xff00ff,transparent:true,opacity:0.5}));t.position.copy(ball.position);scene.add(t);ballTrail.push({mesh:t,life:1});}ballTrail=ballTrail.filter(t=>{t.life-=0.1;t.mesh.material.opacity=t.life*0.5;t.mesh.scale.setScalar(t.life);if(t.life<=0){scene.remove(t.mesh);return false;}return true;});}
+function updateParticles(){particles=particles.filter(p=>{p.life-=p.decay;p.mesh.position.x+=p.velX*0.05;p.mesh.position.y+=p.velY*0.05;p.mesh.material.opacity=p.life;if(p.life<=0){scene.remove(p.mesh);return false;}return true;});}
 function createGoalObj(x,y){goal=new THREE.Mesh(new THREE.CircleGeometry(1,32),new THREE.MeshBasicMaterial({color:0xffd700,transparent:true,opacity:0.9}));goal.position.set(x,y,0);const r=new THREE.Mesh(new THREE.RingGeometry(1.2,1.4,32),new THREE.MeshBasicMaterial({color:0xffd700,transparent:true,opacity:0.7}));goal.add(r);scene.add(goal);}
-function loadLevel(i){platforms.forEach(p=>scene.remove(p.mesh));hazards.forEach(h=>scene.remove(h.mesh));orbs.forEach(o=>scene.remove(o.mesh));if(goal)scene.remove(goal);platforms=[];hazards=[];orbs=[];const l=levels[i];l.platforms.forEach(p=>createPlatform(p.x,p.y,p.w,p.h));l.hazards.forEach(h=>createHazard(h.x,h.y,h.w,h.h));l.orbsPos.forEach(o=>createOrbObj(o.x,o.y));createGoalObj(l.goal.x,l.goal.y);if(!ball)createBall();ball.position.set(l.start.x,l.start.y,0);ballTrail.forEach(t=>scene.remove(t));ballTrail=[];velocity.set(0,0,0);gravity.set(0,-15,0);switchCount=0;orbCount=0;levelCompleted=false;updateHUD();}
-function setGravity(x,y){gravity.set(x*15,y*15,0);switchCount++;playWhoosh();updateHUD();}
+function loadLevel(i){platforms.forEach(p=>scene.remove(p.mesh));hazards.forEach(h=>scene.remove(h.mesh));orbs.forEach(o=>scene.remove(o.mesh));if(goal)scene.remove(goal);platforms=[];hazards=[];orbs=[];ballTrail.forEach(t=>scene.remove(t.mesh));ballTrail=[];particles.forEach(p=>scene.remove(p.mesh));particles=[];const l=levels[i];l.platforms.forEach(p=>createPlatform(p.x,p.y,p.w,p.h));l.hazards.forEach(h=>createHazard(h.x,h.y,h.w,h.h));l.orbsPos.forEach(o=>createOrbObj(o.x,o.y));createGoalObj(l.goal.x,l.goal.y);if(!ball)createBall();ball.position.set(l.start.x,l.start.y,0);velocity.set(0,0,0);gravity.set(0,-15,0);lastGravityDir={x:0,y:-1};switchCount=0;orbCount=0;levelCompleted=false;updateHUD();updateGravityArrow(0,-1);}
+function setGravity(x,y){
+    if(gravityCooldown) return;
+    if(x===0 && y===0) return;
+    if(x===lastGravityDir.x && y===lastGravityDir.y) return;
+    gravity.set(x*15,y*15,0);
+    lastGravityDir={x,y};
+    switchCount++;
+    gravityCooldown=true;
+    const arrowEl=document.getElementById('gravity-arrow');
+    if(arrowEl) arrowEl.classList.add('cooldown');
+    setTimeout(()=>{gravityCooldown=false;if(arrowEl)arrowEl.classList.remove('cooldown');},gravityCooldownTime);
+    playWhoosh();
+    updateGravityArrow(x,y);
+    updateHUD();
+}
+function updateGravityArrow(x,y){
+    const arrow=document.getElementById('gravity-arrow');
+    if(!arrow) return;
+    let rotation=0;
+    if(x===1) rotation=90;
+    else if(x===-1) rotation=-90;
+    else if(y===-1) rotation=180;
+    arrow.style.transform=`rotate(${rotation}deg)`;
+}
 function updateHUD(){document.getElementById('level-display').textContent=currentLevel+1;document.getElementById('switch-display').textContent=switchCount;document.getElementById('orb-display').textContent=orbCount;}
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');document.getElementById('hud').classList.toggle('visible',state===GameState.PLAYING);}
-function checkCollisions(){const r=0.6;platforms.forEach(p=>{const bl=ball.position.x-r,br=ball.position.x+r,bt=ball.position.y+r,bb=ball.position.y-r,pl=p.x-p.w/2,pr=p.x+p.w/2,pt=p.y+p.h/2,pb=p.y-p.h/2;if(br>pl&&bl<pr&&bt>pb&&bb<pt){const ol=br-pl,or=pr-bl,ot=bt-pb,ob=pt-bb,m=Math.min(ol,or,ot,ob);if(m===ot&&velocity.y<0){ball.position.y=pt+r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1)playBoing();}else if(m===ob&&velocity.y>0){ball.position.y=pb-r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1)playBoing();}else if(m===ol&&velocity.x>0){ball.position.x=pl-r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1)playBoing();}else if(m===or&&velocity.x<0){ball.position.x=pr+r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1)playBoing();}}});hazards.forEach(h=>{if(ball.position.x+r>h.x-h.w/2&&ball.position.x-r<h.x+h.w/2&&ball.position.y+r>h.y-h.h/2&&ball.position.y-r<h.y+h.h/2){die();}});orbs.forEach((o,i)=>{if(o.collected)return;const dx=ball.position.x-o.x,dy=ball.position.y-o.y;if(Math.sqrt(dx*dx+dy*dy)<r+0.4){o.collected=true;scene.remove(o.mesh);orbCount++;playOrb();updateHUD();}});if(goal){const dx=ball.position.x-goal.position.x,dy=ball.position.y-goal.position.y;if(Math.sqrt(dx*dx+dy*dy)<r+1){win();}}if(ball.position.y<-25||ball.position.y>30||ball.position.x<-30||ball.position.x>30){die();}}
+function checkCollisions(){const r=0.6;platforms.forEach(p=>{const bl=ball.position.x-r,br=ball.position.x+r,bt=ball.position.y+r,bb=ball.position.y-r,pl=p.x-p.w/2,pr=p.x+p.w/2,pt=p.y+p.h/2,pb=p.y-p.h/2;if(br>pl&&bl<pr&&bt>pb&&bb<pt){const ol=br-pl,or=pr-bl,ot=bt-pb,ob=pt-bb,m=Math.min(ol,or,ot,ob);if(m===ot&&velocity.y<0){ball.position.y=pt+r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1){playBoing();createWallParticles(ball.position.x,pt);}}else if(m===ob&&velocity.y>0){ball.position.y=pb-r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1){playBoing();createWallParticles(ball.position.x,pb);}}else if(m===ol&&velocity.x>0){ball.position.x=pl-r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1){playBoing();createWallParticles(pl,ball.position.y);}}else if(m===or&&velocity.x<0){ball.position.x=pr+r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1){playBoing();createWallParticles(pr,ball.position.y);}}}}});hazards.forEach(h=>{if(ball.position.x+r>h.x-h.w/2&&ball.position.x-r<h.x+h.w/2&&ball.position.y+r>h.y-h.h/2&&ball.position.y-r<h.y+h.h/2){die();}});orbs.forEach((o,i)=>{if(o.collected)return;const dx=ball.position.x-o.x,dy=ball.position.y-o.y;if(Math.sqrt(dx*dx+dy*dy)<r+0.4){o.collected=true;scene.remove(o.mesh);createOrbParticles(o.x,o.y);orbCount++;playOrb();updateHUD();}});if(goal){const dx=ball.position.x-goal.position.x,dy=ball.position.y-goal.position.y;if(Math.sqrt(dx*dx+dy*dy)<r+1){win();}}if(ball.position.y<-25||ball.position.y>30||ball.position.x<-30||ball.position.x>30){die();}}
 function die(){playDeath();state=GameState.DEAD;showScreen('death-screen');}
-function win(){if(levelCompleted)return;levelCompleted=true;playGoal();const l=levels[currentLevel],sw=switchCount,co=orbCount;const ss=sw<=l.parSwitches?3:sw<=l.parSwitches*1.5?2:1,os=co>=l.orbs?3:co>=l.orbs*0.6?2:1,ts=Math.min(ss,os);const prev=levelProgress[currentLevel]||0;if(ts>prev){levelProgress[currentLevel]=ts;localStorage.setItem('gravityBallProgress',JSON.stringify(levelProgress));}document.getElementById('star1').classList.toggle('earned',ts>=1);document.getElementById('star2').classList.toggle('earned',ts>=2);document.getElementById('star3').classList.toggle('earned',ts>=3);document.getElementById('victory-stats').textContent=`Switches: ${sw} | Orbs: ${co}/${l.orbs}`;document.getElementById('next-btn').style.display=currentLevel<levels.length-1?'inline-block':'none';state=GameState.VICTORY;showScreen('victory-screen');}
+function win(){if(levelCompleted)return;levelCompleted=true;velocity.set(0,0,0);playGoal();const l=levels[currentLevel],sw=switchCount,co=orbCount;const ss=sw<=l.parSwitches?3:sw<=l.parSwitches*1.5?2:1,os=co>=l.orbs?3:co>=l.orbs*0.6?2:1,ts=Math.min(ss,os);const prev=levelProgress[currentLevel]||0;if(ts>prev){levelProgress[currentLevel]=ts;localStorage.setItem('gravityBallProgress',JSON.stringify(levelProgress));}document.getElementById('star1').classList.toggle('earned',ts>=1);document.getElementById('star2').classList.toggle('earned',ts>=2);document.getElementById('star3').classList.toggle('earned',ts>=3);document.getElementById('victory-stats').textContent=`Switches: ${sw} | Orbs: ${co}/${l.orbs}`;document.getElementById('next-btn').style.display=currentLevel<levels.length-1?'inline-block':'none';state=GameState.VICTORY;showScreen('victory-screen');}
 function startGame(i=0){currentLevel=i;loadLevel(currentLevel);state=GameState.PLAYING;document.getElementById('main-menu').classList.remove('active');document.getElementById('hud').classList.add('visible');}
 function initLevelSelect(){const c=document.getElementById('level-select');c.innerHTML='';levels.forEach((_,i)=>{const b=document.createElement('button');b.className='level-btn'+(levelProgress[i]?' completed':'');b.textContent=i+1;b.onclick=()=>{initAudio();startGame(i);};c.appendChild(b);});}
 createGrid();initLevelSelect();
-document.getElementById('play-btn').onclick=()=>{initAudio();startGame(0);};
+document.getElementById('play-btn').onclick=()=>{initAudio();if(!localStorage.getItem('gravityBallPlayed')){localStorage.setItem('gravityBallPlayed','true');document.querySelector('.mobile-hint').style.display='block';setTimeout(()=>document.querySelector('.mobile-hint').style.display='none',4000);}startGame(0);};
 document.getElementById('levels-btn').onclick=()=>{showScreen('level-screen');};
 document.getElementById('back-btn').onclick=()=>{showScreen('main-menu');};
 document.getElementById('next-btn').onclick=()=>{if(currentLevel<levels.length-1){currentLevel++;loadLevel(currentLevel);state=GameState.PLAYING;}};
@@ -152,10 +189,10 @@ document.getElementById('pause-menu-btn').onclick=()=>{state=GameState.MENU;show
 document.addEventListener('keydown',e=>{if(state!==GameState.PLAYING)return;switch(e.key.toLowerCase()){case'w':case'arrowup':setGravity(0,1);break;case's':case'arrowdown':setGravity(0,-1);break;case'a':case'arrowleft':setGravity(-1,0);break;case'd':case'arrowright':setGravity(1,0);break;case'r':loadLevel(currentLevel);break;case'escape':state=GameState.PAUSED;document.getElementById('pause-indicator').classList.add('visible');}});
 let touchStartX=0,touchStartY=0;
 document.addEventListener('touchstart',e=>{touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;},{passive:true});
-document.addEventListener('touchend',e=>{if(state!==GameState.PLAYING)return;const dx=e.changedTouches[0].clientX-touchStartX,dy=e.changedTouches[0].clientY-touchStartY;if(Math.abs(dx)<30&&Math.abs(dy)<30)return;if(Math.abs(dx)>Math.abs(dy)){setGravity(dx>0?1:-1,0);}else{setGravity(0,dy>0?1:-1);}},{passive:true});
+document.addEventListener('touchend',e=>{if(state!==GameState.PLAYING)return;const dx=e.changedTouches[0].clientX-touchStartX,dy=e.changedTouches[0].clientY-touchStartY;if(Math.abs(dx)<30&&Math.abs(dy)<30)return;if(Math.abs(dx)>Math.abs(dy)){setGravity(dx>0?1:-1,0);}else{setGravity(0,dy>0?-1:1);}},{passive:true});
 window.addEventListener('resize',()=>{const a=window.innerWidth/window.innerHeight;camera.left=-frustumSize*a/2;camera.right=frustumSize*a/2;camera.top=frustumSize/2;camera.bottom=-frustumSize/2;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);composer.setSize(window.innerWidth,window.innerHeight);});
 let lastTime=0;
-function gameLoop(t){requestAnimationFrame(gameLoop);const dt=Math.min((t-lastTime)/1000,0.05);lastTime=t;if(state===GameState.PLAYING){velocity.add(gravity.clone().multiplyScalar(dt));velocity.multiplyScalar(0.995);ball.position.add(velocity.clone().multiplyScalar(dt));checkCollisions();orbs.forEach(o=>{if(!o.collected){o.mesh.rotation.y+=dt*2;o.mesh.position.y=o.y+Math.sin(t*0.003+o.x)*0.2;}});if(goal){goal.rotation.z+=dt*0.5;}hazards.forEach(h=>{if(h.glow)h.glow.material.opacity=0.2+Math.sin(t*0.005)*0.1;});}composer.render();}
+function gameLoop(t){requestAnimationFrame(gameLoop);const dt=Math.min((t-lastTime)/1000,0.05);lastTime=t;if(state===GameState.PLAYING){velocity.add(gravity.clone().multiplyScalar(dt));velocity.multiplyScalar(0.995);ball.position.add(velocity.clone().multiplyScalar(dt));checkCollisions();updateBallTrail();updateParticles();orbs.forEach(o=>{if(!o.collected){o.mesh.rotation.y+=dt*2;o.mesh.position.y=o.y+Math.sin(t*0.003+o.x)*0.2;}});if(goal){goal.rotation.z+=dt*0.5;}hazards.forEach(h=>{if(h.glow)h.glow.material.opacity=0.2+Math.sin(t*0.005)*0.1;});}composer.render();}
 gameLoop(0);
     </script>
 </body>
