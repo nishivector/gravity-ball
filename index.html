@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Gravity Ball</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Orbitron', monospace; touch-action: none; user-select: none; }
+        #game-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+        .screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.92); z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.4s; }
+        .screen.active { opacity: 1; pointer-events: auto; }
+        .screen-title { font-size: clamp(32px,8vw,72px); font-weight: 900; color: #f0f; text-shadow: 0 0 30px #f0f,0 0 60px #f0f,0 0 90px #f0f; margin-bottom: 20px; letter-spacing: 4px; }
+        .screen-subtitle { font-size: clamp(12px,3vw,18px); color: #0ff; text-shadow: 0 0 20px #0ff; margin-bottom: 40px; letter-spacing: 3px; }
+        .btn { background: transparent; border: 2px solid #0ff; color: #0ff; font-family: 'Orbitron',monospace; font-size: clamp(14px,3vw,20px); padding: 15px 40px; margin: 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 3px; transition: all 0.3s; border-radius: 4px; box-shadow: 0 0 20px rgba(0,255,255,0.3); }
+        .btn:hover { background: #0ff; color: #000; box-shadow: 0 0 40px rgba(0,255,255,0.6); }
+        .btn.primary { border-color: #f0f; color: #f0f; box-shadow: 0 0 20px rgba(255,0,255,0.3); }
+        .btn.primary:hover { background: #f0f; color: #000; box-shadow: 0 0 40px rgba(255,0,255,0.6); }
+        .stars { display: flex; gap: 10px; margin: 20px 0; }
+        .star { font-size: 40px; color: #333; text-shadow: none; transition: all 0.3s; }
+        .star.earned { color: #ffd700; text-shadow: 0 0 20px #ffd700; animation: starPulse 0.5s ease-out; }
+        @keyframes starPulse { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
+        #level-select { display: grid; grid-template-columns: repeat(5,1fr); gap: 15px; max-width: 500px; padding: 20px; }
+        .level-btn { width: 60px; height: 60px; background: transparent; border: 2px solid #0ff; color: #0ff; font-family: 'Orbitron',monospace; font-size: 20px; font-weight: 700; cursor: pointer; border-radius: 8px; transition: all 0.3s; position: relative; }
+        .level-btn:hover { background: #0ff; color: #000; box-shadow: 0 0 30px rgba(0,255,255,0.6); }
+        .level-btn.completed { border-color: #ffd700; color: #ffd700; }
+        .level-btn.completed::after { content: '★'; display: block; font-size: 10px; position: absolute; margin-top: -20px; margin-left: 22px; }
+        #hud { position: fixed; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; z-index: 100; opacity: 0; transition: opacity 0.3s; }
+        #hud.visible { opacity: 1; }
+        .hud-panel { background: rgba(0,0,0,0.6); border: 2px solid #0ff; border-radius: 8px; padding: 12px 20px; color: #0ff; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 20px rgba(0,255,255,0.3),inset 0 0 20px rgba(0,255,255,0.1); }
+        .hud-value { font-size: 24px; font-weight: 700; color: #f0f; text-shadow: 0 0 10px #f0f; }
+        .hud-label { font-size: 10px; opacity: 0.7; margin-bottom: 4px; }
+        #pause-indicator { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 48px; color: #ffd700; text-shadow: 0 0 30px #ffd700; opacity: 0; pointer-events: none; z-index: 150; }
+        #pause-indicator.visible { opacity: 1; }
+        .controls-hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #0ff; font-size: 12px; opacity: 0.5; text-align: center; }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="hud">
+        <div class="hud-panel"><div class="hud-label">Level</div><div class="hud-value" id="level-display">1</div></div>
+        <div class="hud-panel"><div class="hud-label">Switches</div><div class="hud-value" id="switch-display">0</div></div>
+        <div class="hud-panel"><div class="hud-label">Orbs</div><div class="hud-value" id="orb-display">0</div></div>
+    </div>
+    <div id="main-menu" class="screen active">
+        <div class="screen-title">GRAVITY BALL</div>
+        <div class="screen-subtitle">Master the Art of Falling</div>
+        <button class="btn primary" id="play-btn">Play</button>
+        <button class="btn" id="levels-btn">Levels</button>
+    </div>
+    <div id="level-screen" class="screen">
+        <div class="screen-title">SELECT LEVEL</div>
+        <div id="level-select"></div>
+        <button class="btn" id="back-btn">Back</button>
+    </div>
+    <div id="victory-screen" class="screen">
+        <div class="screen-title">LEVEL COMPLETE</div>
+        <div class="stars"><span class="star" id="star1">★</span><span class="star" id="star2">★</span><span class="star" id="star3">★</span></div>
+        <div class="screen-subtitle" id="victory-stats">Switches: 0 | Orbs: 0</div>
+        <button class="btn primary" id="next-btn">Next Level</button>
+        <button class="btn" id="retry-btn">Retry</button>
+        <button class="btn" id="menu-btn">Menu</button>
+    </div>
+    <div id="death-screen" class="screen">
+        <div class="screen-title" style="color:#ff3333;text-shadow:0 0 30px #ff3333">GAME OVER</div>
+        <div class="screen-subtitle">The void claimed you...</div>
+        <button class="btn primary" id="try-again-btn">Try Again</button>
+        <button class="btn" id="death-menu-btn">Menu</button>
+    </div>
+    <div id="pause-screen" class="screen">
+        <div class="screen-title" style="color:#ffd700;text-shadow:0 0 30px #ffd700">PAUSED</div>
+        <button class="btn primary" id="resume-btn">Resume</button>
+        <button class="btn" id="pause-retry-btn">Restart</button>
+        <button class="btn" id="pause-menu-btn">Menu</button>
+    </div>
+    <div id="pause-indicator">⏸ PAUSED</div>
+    <div class="controls-hint">WASD / Arrows to switch gravity • R to restart • ESC to pause</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script>
+const GameState={MENU:'menu',PLAYING:'playing',PAUSED:'paused',VICTORY:'victory',DEAD:'dead',LEVEL_SELECT:'level_select'};
+let state=GameState.MENU,currentLevel=0,switchCount=0,orbCount=0,gravity=new THREE.Vector3(0,-15,0),velocity=new THREE.Vector3(),levelCompleted=false,audioInitialized=false;
+let ball,platforms=[],hazards=[],orbs=[],goal,ballTrail=[];
+const container=document.getElementById('game-container'),scene=new THREE.Scene();
+const aspect=window.innerWidth/window.innerHeight,frustumSize=30;
+const camera=new THREE.OrthographicCamera(-frustumSize*aspect/2,frustumSize*aspect/2,frustumSize/2,-frustumSize/2,0.1,1000);
+camera.position.z=50;
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setClearColor(0);
+container.appendChild(renderer.domElement);
+const composer=new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene,camera));
+const bloomPass=new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth,window.innerHeight),1.5,0.4,0.85);
+bloomPass.threshold=0.1;bloomPass.strength=2;bloomPass.radius=0.5;
+composer.addPass(bloomPass);
+const levels=[
+{parSwitches:3,orbs:3,platforms:[{x:0,y:-8,w:20,h:1},{x:-8,y:-2,w:6,h:1},{x:8,y:4,w:6,h:1},{x:0,y:10,w:20,h:1}],hazards:[],orbsPos:[{x:-8,y:1},{x:8,y:-5},{x:0,y:0}],goal:{x:0,y:12},start:{x:0,y:-6}},
+{parSwitches:4,orbs:2,platforms:[{x:0,y:-8,w:12,h:1},{x:-6,y:-2,w:6,h:1},{x:6,y:4,w:6,h:1},{x:0,y:10,w:12,h:1}],hazards:[{x:0,y:0,w:4,h:0.5}],orbsPos:[{x:-6,y:1},{x:6,y:-1}],goal:{x:0,y:12},start:{x:0,y:-6}},
+{parSwitches:5,orbs:3,platforms:[{x:-8,y:-8,w:8,h:1},{x:0,y:-4,w:6,h:1},{x:8,y:0,w:6,h:1},{x:-8,y:6,w:6,h:1},{x:0,y:12,w:8,h:1}],hazards:[{x:0,y:-8,w:10,h:0.5}],orbsPos:[{x:0,y:-1},{x:8,y:3},{x:-8,y:9}],goal:{x:0,y:14},start:{x:-8,y:-6}},
+{parSwitches:6,orbs:4,platforms:[{x:0,y:-10,w:8,h:1},{x:-5,y:-4,w:4,h:1},{x:5,y:2,w:4,h:1},{x:-5,y:8,w:4,h:1},{x:5,y:14,w:8,h:1}],hazards:[{x:0,y:-4,w:6,h:0.5},{x:0,y:8,w:6,h:0.5}],orbsPos:[{x:-5,y:-1},{x:5,y:5},{x:-5,y:11},{x:5,y:2}],goal:{x:5,y:16},start:{x:0,y:-8}},
+{parSwitches:7,orbs:5,platforms:[{x:-6,y:-10,w:6,h:1},{x:6,y:-6,w:6,h:1},{x:-6,y:-2,w:6,h:1},{x:6,y:2,w:6,h:1},{x:-6,y:6,w:6,h:1},{x:0,y:12,w:10,h:1}],hazards:[{x:0,y:-6,w:8,h:0.5},{x:0,y:2,w:8,h:0.5}],orbsPos:[{x:6,y:-3},{x:-6,y:1},{x:6,y:5},{x:-6,y:9},{x:0,y:-10}],goal:{x:0,y:14},start:{x:-6,y:-8}},
+{parSwitches:6,orbs:3,platforms:[{x:0,y:-12,w:6,h:1},{x:-4,y:-6,w:4,h:1},{x:4,y:-6,w:4,h:1},{x:0,y:0,w:4,h:1},{x:-4,y:6,w:4,h:1},{x:4,y:6,w:4,h:1},{x:0,y:12,w:6,h:1}],hazards:[{x:-4,y:0,w:8,h:0.5},{x:4,y:0,w:8,h:0.5}],orbsPos:[{x:-4,y:-3},{x:4,y:-3},{x:0,y:3}],goal:{x:0,y:14},start:{x:0,y:-10}},
+{parSwitches:8,orbs:4,platforms:[{x:0,y:-12,w:10,h:1},{x:-6,y:-6,w:4,h:1},{x:6,y:-6,w:4,h:1},{x:0,y:-6,w:4,h:1},{x:-6,y:2,w:4,h:1},{x:6,y:2,w:4,h:1},{x:0,y:8,w:10,h:1}],hazards:[{x:-3,y:-6,w:6,h:0.5},{x:3,y:2,w:6,h:0.5},{x:0,y:-12,w:10,h:0.5}],orbsPos:[{x:-6,y:-3},{x:6,y:-3},{x:-6,y:5},{x:6,y:5}],goal:{x:0,y:10},start:{x:0,y:-10}},
+{parSwitches:8,orbs:5,platforms:[{x:0,y:-14,w:4,h:1},{x:-5,y:-8,w:3,h:1},{x:5,y:-8,w:3,h:1},{x:0,y:-2,w:3,h:1},{x:-5,y:4,w:3,h:1},{x:5,y:4,w:3,h:1},{x:0,y:10,w:4,h:1},{x:0,y:16,w:4,h:1}],hazards:[{x:0,y:-8,w:10,h:0.5},{x:0,y:4,w:10,h:0.5},{x:-5,y:-2,w:6,h:0.5}],orbsPos:[{x:-5,y:-5},{x:5,y:-5},{x:0,y:1},{x:-5,y:7},{x:5,y:7}],goal:{x:0,y:18},start:{x:0,y:-12}},
+{parSwitches:10,orbs:6,platforms:[{x:0,y:-14,w:8,h:1},{x:-7,y:-8,w:4,h:1},{x:7,y:-8,w:4,h:1},{x:-7,y:-2,w:4,h:1},{x:7,y:-2,w:4,h:1},{x:0,y:4,w:4,h:1},{x:-7,y:10,w:4,h:1},{x:7,y:10,w:4,h:1},{x:0,y:16,w:8,h:1}],hazards:[{x:0,y:-8,w:14,h:0.5},{x:0,y:-2,w:14,h:0.5},{x:0,y:10,w:14,h:0.5}],orbsPos:[{x:-7,y:-5},{x:7,y:-5},{x:-7,y:1},{x:7,y:1},{x:0,y:7},{x:0,y:-14}],goal:{x:0,y:18},start:{x:0,y:-12}},
+{parSwitches:12,orbs:7,platforms:[{x:0,y:-16,w:6,h:1},{x:-8,y:-10,w:3,h:1},{x:8,y:-10,w:3,h:1},{x:0,y:-6,w:3,h:1},{x:-8,y:-2,w:3,h:1},{x:8,y:-2,w:3,h:1},{x:0,y:2,w:3,h:1},{x:-8,y:6,w:3,h:1},{x:8,y:6,w:3,h:1},{x:0,y:12,w:3,h:1},{x:0,y:18,w:6,h:1}],hazards:[{x:0,y:-10,w:16,h:0.5},{x:0,y:-2,w:16,h:0.5},{x:0,y:6,w:16,h:0.5},{x:0,y:12,w:16,h:0.5}],orbsPos:[{x:-8,y:-7},{x:8,y:-7},{x:-8,y:-1},{x:8,y:-1},{x:0,y:-3},{x:0,y:5},{x:0,y:15}],goal:{x:0,y:20},start:{x:0,y:-14}}
+];
+let levelProgress=JSON.parse(localStorage.getItem('gravityBallProgress')||'{}');
+let musicSynth,musicLoop;
+async function initAudio(){if(audioInitialized)return;await Tone.start();audioInitialized=true;musicSynth=new Tone.PolySynth(Tone.Synth,{oscillator:{type:'square'},envelope:{attack:0.01,decay:0.1,sustain:0.5,release:0.3}}).toDestination();musicSynth.volume.value=-15;startMusic();}
+function startMusic(){const notes=['C3','E3','G3','A3','B3','D4','F4','G4'];if(musicLoop)clearInterval(musicLoop);musicLoop=setInterval(()=>{if(state!==GameState.PLAYING)return;musicSynth.triggerAttackRelease(notes[Math.floor(Math.random()*notes.length)],'8n');},400);}
+function playWhoosh(){if(!audioInitialized)return;const n=new Tone.NoiseSynth({noise:{type:'brown'},envelope:{attack:0.01,decay:0.2,sustain:0,release:0.1}}).toDestination();n.volume.value=-10;n.triggerAttackRelease('16n');}
+function playBoing(){if(!audioInitialized)return;const o=new Tone.Oscillator({type:'sine',frequency:300}).toDestination();o.volume.value=-8;o.frequency.rampTo(150,0.1);o.start();o.stop('+0.15');}
+function playOrb(){if(!audioInitialized)return;const s=new Tone.Synth({oscillator:{type:'sine'},envelope:{attack:0.01,decay:0.3,sustain:0,release:0.2}}).toDestination();s.volume.value=-5;s.triggerAttackRelease('C6','16n');s.triggerAttackRelease('E6','16n','+0.05');}
+function playGoal(){if(!audioInitialized)return;['C5','E5','G5','C6'].forEach((n,i)=>{setTimeout(()=>{const s=new Tone.Synth({oscillator:{type:'triangle'},envelope:{attack:0.01,decay:0.4,sustain:0.2,release:0.3}}).toDestination();s.volume.value=-3;s.triggerAttackRelease(n,'8n');},i*100));});}
+function playDeath(){if(!audioInitialized)return;const o=new Tone.Oscillator({type:'sawtooth',frequency:200}).toDestination();o.volume.value=-5;o.frequency.rampTo(50,0.3);o.start();o.stop('+0.4');}
+function createGrid(){const g=new THREE.GridHelper(100,50,0x111133,0x0a0a1a);g.rotation.x=Math.PI/2;g.position.z=-5;scene.add(g);}
+function createBall(){ball=new THREE.Mesh(new THREE.SphereGeometry(0.6,32,32),new THREE.MeshBasicMaterial({color:0xff00ff}));ball.position.set(0,0,0);scene.add(ball);const glow=new THREE.Mesh(new THREE.SphereGeometry(0.8,32,32),new THREE.MeshBasicMaterial({color:0xff00ff,transparent:true,opacity:0.3}));ball.add(glow);}
+function createPlatform(x,y,w,h){const p=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.8}));p.position.set(x,y,0);const e=new THREE.EdgesGeometry(p.geometry);p.add(new THREE.LineSegments(e,new THREE.LineBasicMaterial({color:0x00ffff})));scene.add(p);platforms.push({mesh:p,x,y,w,h});}
+function createHazard(x,y,w,h){const hz=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({color:0xff3333,transparent:true,opacity:0.9}));hz.position.set(x,y,0);const glow=new THREE.Mesh(new THREE.PlaneGeometry(w+0.5,h+0.5),new THREE.MeshBasicMaterial({color:0xff0000,transparent:true,opacity:0.3}));hz.add(glow);scene.add(hz);hazards.push({mesh:hz,x,y,w,h,glow});}
+function createOrbObj(x,y){const o=new THREE.Mesh(new THREE.SphereGeometry(0.4,16,16),new THREE.MeshBasicMaterial({color:0x00ffff}));o.position.set(x,y,0);const g=new THREE.Mesh(new THREE.SphereGeometry(0.6,16,16),new THREE.MeshBasicMaterial({color:0x00ffff,transparent:true,opacity:0.3}));o.add(g);scene.add(o);orbs.push({mesh:o,x,y,collected:false});}
+function createGoalObj(x,y){goal=new THREE.Mesh(new THREE.CircleGeometry(1,32),new THREE.MeshBasicMaterial({color:0xffd700,transparent:true,opacity:0.9}));goal.position.set(x,y,0);const r=new THREE.Mesh(new THREE.RingGeometry(1.2,1.4,32),new THREE.MeshBasicMaterial({color:0xffd700,transparent:true,opacity:0.7}));goal.add(r);scene.add(goal);}
+function loadLevel(i){platforms.forEach(p=>scene.remove(p.mesh));hazards.forEach(h=>scene.remove(h.mesh));orbs.forEach(o=>scene.remove(o.mesh));if(goal)scene.remove(goal);platforms=[];hazards=[];orbs=[];const l=levels[i];l.platforms.forEach(p=>createPlatform(p.x,p.y,p.w,p.h));l.hazards.forEach(h=>createHazard(h.x,h.y,h.w,h.h));l.orbsPos.forEach(o=>createOrbObj(o.x,o.y));createGoalObj(l.goal.x,l.goal.y);if(!ball)createBall();ball.position.set(l.start.x,l.start.y,0);ballTrail.forEach(t=>scene.remove(t));ballTrail=[];velocity.set(0,0,0);gravity.set(0,-15,0);switchCount=0;orbCount=0;levelCompleted=false;updateHUD();}
+function setGravity(x,y){gravity.set(x*15,y*15,0);switchCount++;playWhoosh();updateHUD();}
+function updateHUD(){document.getElementById('level-display').textContent=currentLevel+1;document.getElementById('switch-display').textContent=switchCount;document.getElementById('orb-display').textContent=orbCount;}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');document.getElementById('hud').classList.toggle('visible',state===GameState.PLAYING);}
+function checkCollisions(){const r=0.6;platforms.forEach(p=>{const bl=ball.position.x-r,br=ball.position.x+r,bt=ball.position.y+r,bb=ball.position.y-r,pl=p.x-p.w/2,pr=p.x+p.w/2,pt=p.y+p.h/2,pb=p.y-p.h/2;if(br>pl&&bl<pr&&bt>pb&&bb<pt){const ol=br-pl,or=pr-bl,ot=bt-pb,ob=pt-bb,m=Math.min(ol,or,ot,ob);if(m===ot&&velocity.y<0){ball.position.y=pt+r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1)playBoing();}else if(m===ob&&velocity.y>0){ball.position.y=pb-r;velocity.y*=-0.6;if(Math.abs(velocity.y)>1)playBoing();}else if(m===ol&&velocity.x>0){ball.position.x=pl-r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1)playBoing();}else if(m===or&&velocity.x<0){ball.position.x=pr+r;velocity.x*=-0.6;if(Math.abs(velocity.x)>1)playBoing();}}});hazards.forEach(h=>{if(ball.position.x+r>h.x-h.w/2&&ball.position.x-r<h.x+h.w/2&&ball.position.y+r>h.y-h.h/2&&ball.position.y-r<h.y+h.h/2){die();}});orbs.forEach((o,i)=>{if(o.collected)return;const dx=ball.position.x-o.x,dy=ball.position.y-o.y;if(Math.sqrt(dx*dx+dy*dy)<r+0.4){o.collected=true;scene.remove(o.mesh);orbCount++;playOrb();updateHUD();}});if(goal){const dx=ball.position.x-goal.position.x,dy=ball.position.y-goal.position.y;if(Math.sqrt(dx*dx+dy*dy)<r+1){win();}}if(ball.position.y<-25||ball.position.y>30||ball.position.x<-30||ball.position.x>30){die();}}
+function die(){playDeath();state=GameState.DEAD;showScreen('death-screen');}
+function win(){if(levelCompleted)return;levelCompleted=true;playGoal();const l=levels[currentLevel],sw=switchCount,co=orbCount;const ss=sw<=l.parSwitches?3:sw<=l.parSwitches*1.5?2:1,os=co>=l.orbs?3:co>=l.orbs*0.6?2:1,ts=Math.min(ss,os);const prev=levelProgress[currentLevel]||0;if(ts>prev){levelProgress[currentLevel]=ts;localStorage.setItem('gravityBallProgress',JSON.stringify(levelProgress));}document.getElementById('star1').classList.toggle('earned',ts>=1);document.getElementById('star2').classList.toggle('earned',ts>=2);document.getElementById('star3').classList.toggle('earned',ts>=3);document.getElementById('victory-stats').textContent=`Switches: ${sw} | Orbs: ${co}/${l.orbs}`;document.getElementById('next-btn').style.display=currentLevel<levels.length-1?'inline-block':'none';state=GameState.VICTORY;showScreen('victory-screen');}
+function startGame(i=0){currentLevel=i;loadLevel(currentLevel);state=GameState.PLAYING;document.getElementById('main-menu').classList.remove('active');document.getElementById('hud').classList.add('visible');}
+function initLevelSelect(){const c=document.getElementById('level-select');c.innerHTML='';levels.forEach((_,i)=>{const b=document.createElement('button');b.className='level-btn'+(levelProgress[i]?' completed':'');b.textContent=i+1;b.onclick=()=>{initAudio();startGame(i);};c.appendChild(b);});}
+createGrid();initLevelSelect();
+document.getElementById('play-btn').onclick=()=>{initAudio();startGame(0);};
+document.getElementById('levels-btn').onclick=()=>{showScreen('level-screen');};
+document.getElementById('back-btn').onclick=()=>{showScreen('main-menu');};
+document.getElementById('next-btn').onclick=()=>{if(currentLevel<levels.length-1){currentLevel++;loadLevel(currentLevel);state=GameState.PLAYING;}};
+document.getElementById('retry-btn').onclick=()=>{loadLevel(currentLevel);state=GameState.PLAYING;};
+document.getElementById('menu-btn').onclick=()=>{state=GameState.MENU;showScreen('main-menu');};
+document.getElementById('try-again-btn').onclick=()=>{loadLevel(currentLevel);state=GameState.PLAYING;};
+document.getElementById('death-menu-btn').onclick=()=>{state=GameState.MENU;showScreen('main-menu');};
+document.getElementById('resume-btn').onclick=()=>{state=GameState.PLAYING;document.getElementById('pause-indicator').classList.remove('visible');};
+document.getElementById('pause-retry-btn').onclick=()=>{loadLevel(currentLevel);state=GameState.PLAYING;document.getElementById('pause-indicator').classList.remove('visible');};
+document.getElementById('pause-menu-btn').onclick=()=>{state=GameState.MENU;showScreen('main-menu');document.getElementById('pause-indicator').classList.remove('visible');};
+document.addEventListener('keydown',e=>{if(state!==GameState.PLAYING)return;switch(e.key.toLowerCase()){case'w':case'arrowup':setGravity(0,1);break;case's':case'arrowdown':setGravity(0,-1);break;case'a':case'arrowleft':setGravity(-1,0);break;case'd':case'arrowright':setGravity(1,0);break;case'r':loadLevel(currentLevel);break;case'escape':state=GameState.PAUSED;document.getElementById('pause-indicator').classList.add('visible');}});
+let touchStartX=0,touchStartY=0;
+document.addEventListener('touchstart',e=>{touchStartX=e.touches[0].clientX;touchStartY=e.touches[0].clientY;},{passive:true});
+document.addEventListener('touchend',e=>{if(state!==GameState.PLAYING)return;const dx=e.changedTouches[0].clientX-touchStartX,dy=e.changedTouches[0].clientY-touchStartY;if(Math.abs(dx)<30&&Math.abs(dy)<30)return;if(Math.abs(dx)>Math.abs(dy)){setGravity(dx>0?1:-1,0);}else{setGravity(0,dy>0?1:-1);}},{passive:true});
+window.addEventListener('resize',()=>{const a=window.innerWidth/window.innerHeight;camera.left=-frustumSize*a/2;camera.right=frustumSize*a/2;camera.top=frustumSize/2;camera.bottom=-frustumSize/2;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);composer.setSize(window.innerWidth,window.innerHeight);});
+let lastTime=0;
+function gameLoop(t){requestAnimationFrame(gameLoop);const dt=Math.min((t-lastTime)/1000,0.05);lastTime=t;if(state===GameState.PLAYING){velocity.add(gravity.clone().multiplyScalar(dt));velocity.multiplyScalar(0.995);ball.position.add(velocity.clone().multiplyScalar(dt));checkCollisions();orbs.forEach(o=>{if(!o.collected){o.mesh.rotation.y+=dt*2;o.mesh.position.y=o.y+Math.sin(t*0.003+o.x)*0.2;}});if(goal){goal.rotation.z+=dt*0.5;}hazards.forEach(h=>{if(h.glow)h.glow.material.opacity=0.2+Math.sin(t*0.005)*0.1;});}composer.render();}
+gameLoop(0);
+    </script>
+</body>
+</html>
